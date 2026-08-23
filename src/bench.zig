@@ -26,14 +26,25 @@ fn is_executable(mode: std.posix.mode_t) bool {
     return ((mode & 0x0FFF) & 0o111) > 0;
 }
 
-const BenchError = ExecError || Io.Writer.Error;
+const BenchError = ExecError || Io.Writer.Error || Io.File.StatError || Io.File.SeekError;
 
 fn bench(gpa: Allocator, io: Io, comptime dir: []const u8) BenchError!void {
     var buf: [64]u8 = undefined;
-    var stdout = Io.File.stdout().writer(io, &buf);
-    const writer = &stdout.interface;
+    const file = try Io.Dir.cwd().createFile(io, "./results.csv", .{ .truncate = false });
+    defer file.close(io);
 
-    const modes = [_][]const u8{ "Debug", "ReleaseSafe", "ReleaseSmall", "ReleaseFast" };
+    // Append to file
+    const stat = try file.stat(io);
+    var file_writer = file.writer(io, &buf);
+    try file_writer.seekTo(stat.size);
+    const writer = &file_writer.interface;
+
+    const modes = [_][]const u8{
+        // "Debug",
+        // "ReleaseSafe",
+        // "ReleaseSmall",
+        "ReleaseFast",
+    };
     inline for (modes) |mode| {
         const cmd = dir ++ "/sub-" ++ mode;
         std.log.info("Executing {s}", .{mode});
