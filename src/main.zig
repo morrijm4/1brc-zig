@@ -10,6 +10,16 @@ const Stats = struct {
     count: u32,
 };
 
+/// Linear search for the last index of a scalar value inside a slice starting at `index`.
+fn findScalarLastPos(comptime T: type, slice: []const T, index: usize, value: T) ?usize {
+    var i: usize = index;
+    while (i != 0) {
+        i -= 1;
+        if (slice[i] == value) return i;
+    }
+    return null;
+}
+
 fn lessThan(_: void, a: []const u8, b: []const u8) bool {
     return std.mem.lessThan(u8, a, b);
 }
@@ -48,7 +58,12 @@ pub fn main(init: std.process.Init) !void {
     // var last = start;
     var i: u64 = 0;
     while (try reader.takeDelimiter('\n')) |line| : (i += 1) {
-        const dim = std.mem.findScalar(u8, line, ';').?;
+        // Max temperature string lengh is 5
+        // Min temperature string lengh is 3
+        // Vientiane;-26.8
+        //          ^
+        // 0123456789
+        const dim = findScalarLastPos(u8, line, line.len - 3, ';').?;
         const station = line[0..dim];
         const temp_str = line[(dim + 1)..];
         const temp = try std.fmt.parseFloat(f32, temp_str);
