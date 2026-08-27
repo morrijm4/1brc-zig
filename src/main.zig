@@ -47,6 +47,7 @@ pub fn main(init: std.process.Init) !void {
     // Initialize station hash map
     const StatsMap = std.StringHashMapUnmanaged(Stats);
     var map: StatsMap = .empty;
+    try map.ensureTotalCapacity(gpa, 10_000);
     defer map.deinit(gpa);
     defer {
         var it = map.keyIterator();
@@ -68,7 +69,7 @@ pub fn main(init: std.process.Init) !void {
         const temp_str = line[(dim + 1)..];
         const temp = try std.fmt.parseFloat(f32, temp_str);
 
-        const gop = try map.getOrPut(gpa, station);
+        const gop = map.getOrPutAssumeCapacity(station);
         if (gop.found_existing) {
             if (temp < gop.value_ptr.min) gop.value_ptr.min = temp;
             if (temp > gop.value_ptr.max) gop.value_ptr.max = temp;
