@@ -3,6 +3,7 @@ const Io = std.Io;
 
 const sub = @import("sub");
 
+// Keep at 128 bytes to fit in cache line.
 const Stats = struct {
     sum: i64,
     count: u32,
