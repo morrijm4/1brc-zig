@@ -4,11 +4,51 @@ const Io = std.Io;
 const sub = @import("sub");
 
 const Stats = struct {
-    min: f32,
-    max: f32,
-    sum: f32,
+    sum: i64,
     count: u32,
+    min: i16,
+    max: i16,
 };
+
+fn backToFloat(i: i16) f32 {
+    return @as(f32, @floatFromInt(i)) / 10;
+}
+
+fn charToDigit(ch: u8) i16 {
+    return ch - '0';
+}
+
+fn parseTemp(temp: []const u8) i16 {
+    var result: i16 = 0;
+    var i = temp.len - 1;
+
+    const ones = charToDigit(temp[i]);
+    result = ones;
+
+    i -= 2; // Skip '.'
+
+    const tens = charToDigit(temp[i]);
+    result += tens * 10;
+
+    // Edge Cases:
+    // 1. -10.0
+    // 2. -0.0
+    // 3. 10.0
+    // 4. 0.0
+
+    if (temp.len == 5) {
+        result += charToDigit(temp[1]) * 100;
+        result *= -1;
+    } else if (temp.len == 4) {
+        if (temp[0] == '-') {
+            result *= -1;
+        } else {
+            result += charToDigit(temp[0]) * 100;
+        }
+    }
+
+    return result;
+}
 
 /// Linear search for the last index of a scalar value inside a slice starting at `index`.
 fn findScalarLastPos(comptime T: type, slice: []const T, index: usize, value: T) ?usize {
@@ -67,7 +107,7 @@ pub fn main(init: std.process.Init) !void {
         const dim = findScalarLastPos(u8, line, line.len - 3, ';').?;
         const station = line[0..dim];
         const temp_str = line[(dim + 1)..];
-        const temp = try std.fmt.parseFloat(f32, temp_str);
+        const temp = parseTemp(temp_str);
 
         const gop = map.getOrPutAssumeCapacity(station);
         if (gop.found_existing) {
@@ -113,12 +153,16 @@ pub fn main(init: std.process.Init) !void {
     var first: bool = true;
     for (keys) |k| {
         const v = map.get(k).?;
-        const avg = v.sum / @as(f32, @floatFromInt(v.count));
+
+        const avg = @as(f32, @floatFromInt(v.sum)) / @as(f32, @floatFromInt(v.count * 10));
+        const min = backToFloat(v.min);
+        const max = backToFloat(v.max);
+
         if (first) {
-            try writer.print("{s}={d:.1}/{d:.1}/{d:.1}", .{ k, v.min, avg, v.max });
+            try writer.print("{s}={d:.1}/{d:.1}/{d:.1}", .{ k, min, avg, max });
             first = false;
         } else {
-            try writer.print(", {s}={d:.1}/{d:.1}/{d:.1}", .{ k, v.min, avg, v.max });
+            try writer.print(", {s}={d:.1}/{d:.1}/{d:.1}", .{ k, min, avg, max });
         }
     }
     try writer.writeByte('}');
