@@ -96,8 +96,7 @@ pub fn main(init: std.process.Init) !void {
     }
 
     // Iterate through each line and insert into map
-    var i: u64 = 0;
-    while (try reader.takeDelimiter('\n')) |line| : (i += 1) {
+    while (try reader.takeDelimiter('\n')) |line| {
         // Max temperature string lengh is 5
         // Min temperature string lengh is 3
         // Vientiane;-26.8
@@ -127,7 +126,7 @@ pub fn main(init: std.process.Init) !void {
     defer gpa.free(keys);
 
     var it = map.keyIterator();
-    i = 0;
+    var i: u32 = 0;
     while (it.next()) |k| : (i += 1) keys[i] = k.*;
 
     std.mem.sort([]const u8, keys, {}, lessThan);
