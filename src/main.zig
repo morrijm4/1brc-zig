@@ -1,8 +1,6 @@
 const std = @import("std");
 const Io = std.Io;
 
-const sub = @import("sub");
-
 // Keep at 128 bytes to fit in cache line.
 const Stats = struct {
     sum: i64,
@@ -10,6 +8,13 @@ const Stats = struct {
     min: i16,
     max: i16,
 };
+
+fn pread(file: Io.File, buf: [*]u8, len: usize, pos: usize) !?usize {
+    const n = std.posix.system.pread(file.handle, buf, len, @intCast(pos));
+    if (n < 0) return error.ReadError;
+    if (n == 0) return null;
+    return @intCast(n);
+}
 
 fn backToFloat(i: i16) f32 {
     return @as(f32, @floatFromInt(i)) / 10;
@@ -82,8 +87,6 @@ pub fn main(init: std.process.Init) !void {
     var buf: [4 * 1024 * 1024]u8 = undefined;
     const file = try Io.Dir.cwd().openFile(io, sub_path, .{});
     defer file.close(io);
-    var file_reader = file.reader(io, &buf);
-    const reader = &file_reader.interface;
 
     // Initialize station hash map
     const StatsMap = std.StringHashMapUnmanaged(Stats);
@@ -95,31 +98,39 @@ pub fn main(init: std.process.Init) !void {
         while (it.next()) |k| gpa.free(k.*);
     }
 
-    // Iterate through each line and insert into map
-    while (try reader.takeDelimiter('\n')) |line| {
-        // Max temperature string lengh is 5
-        // Min temperature string lengh is 3
-        // Vientiane;-26.8
-        //          ^
-        // 0123456789
-        const dim = findScalarLastPos(u8, line, line.len - 3, ';').?;
-        const station = line[0..dim];
-        const temp_str = line[(dim + 1)..];
-        const temp = parseTemp(temp_str);
+    var off: usize = 0;
+    while (try pread(file, &buf, buf.len, off)) |n| {
+        var i: usize = 0;
+        while (i < n) {
+            const newline = std.mem.findScalarPos(u8, &buf, i, '\n') orelse break;
+            // Max temperature string lengh is 5
+            // Min temperature string lengh is 3
+            // Vientiane;-26.8
+            //          ^
+            // 0123456789
+            const semi = findScalarLastPos(u8, &buf, newline - 3, ';') orelse break;
 
-        const gop = map.getOrPutAssumeCapacity(station);
-        if (gop.found_existing) {
-            if (temp < gop.value_ptr.min) gop.value_ptr.min = temp;
-            if (temp > gop.value_ptr.max) gop.value_ptr.max = temp;
-            gop.value_ptr.sum += temp;
-            gop.value_ptr.count += 1;
-        } else {
-            gop.key_ptr.* = try gpa.dupe(u8, station);
-            gop.value_ptr.min = temp;
-            gop.value_ptr.max = temp;
-            gop.value_ptr.sum = temp;
-            gop.value_ptr.count = 1;
+            const start = i;
+            i = newline + 1;
+
+            const station = buf[start..semi];
+            const temp = parseTemp(buf[semi + 1 .. newline]);
+
+            const gop = map.getOrPutAssumeCapacity(station);
+            if (gop.found_existing) {
+                if (temp < gop.value_ptr.min) gop.value_ptr.min = temp;
+                if (temp > gop.value_ptr.max) gop.value_ptr.max = temp;
+                gop.value_ptr.sum += temp;
+                gop.value_ptr.count += 1;
+            } else {
+                gop.key_ptr.* = try gpa.dupe(u8, station);
+                gop.value_ptr.min = temp;
+                gop.value_ptr.max = temp;
+                gop.value_ptr.sum = temp;
+                gop.value_ptr.count = 1;
+            }
         }
+        off += i;
     }
 
     var keys = try gpa.alloc([]const u8, map.count());
