@@ -9,6 +9,44 @@ const Stats = struct {
     max: i16,
 };
 
+const Table = struct {
+    table: []Entry,
+
+    const Entry = struct {
+        key: []const u8,
+        hash: u64,
+        stats: Stats,
+
+        fn isEmpty(self: Entry) bool {
+            return self.key.len == 0;
+        }
+    };
+
+    fn init(table: []Entry) Table {
+        for (table) |*entry| {
+            entry.key = &.{};
+            entry.hash = 0;
+            entry.stats = .{
+                .sum = 0,
+                .count = 0,
+                .min = 1000,
+                .max = -1000,
+            };
+        }
+        return .{ .table = table };
+    }
+
+    fn get(self: Table, key: []const u8) *Entry {
+        const hash = std.hash.Wyhash.hash(42, key);
+        var i = hash % self.table.len;
+        while (!self.table[i].isEmpty()) : (i = (i + 1) % self.table.len) {
+            if (self.table[i].hash == hash) return &self.table[i];
+        }
+        self.table[i].hash = hash;
+        return &self.table[i];
+    }
+};
+
 fn pread(file: Io.File, buf: [*]u8, len: usize, pos: usize) !?usize {
     const n = std.posix.system.pread(file.handle, buf, len, @intCast(pos));
     if (n < 0) return error.ReadError;
@@ -89,13 +127,13 @@ pub fn main(init: std.process.Init) !void {
     defer file.close(io);
 
     // Initialize station hash map
-    const StatsMap = std.StringHashMapUnmanaged(Stats);
-    var map: StatsMap = .empty;
-    try map.ensureTotalCapacity(gpa, 10_000);
-    defer map.deinit(gpa);
+    var entries: [10_000]Table.Entry = undefined;
+    const table = Table.init(&entries);
+    var stations: std.ArrayList([]const u8) = .empty;
+    try stations.ensureTotalCapacityPrecise(gpa, 10_000);
     defer {
-        var it = map.keyIterator();
-        while (it.next()) |k| gpa.free(k.*);
+        for (stations.items) |s| gpa.free(s);
+        stations.deinit(gpa);
     }
 
     var off: usize = 0;
@@ -116,31 +154,20 @@ pub fn main(init: std.process.Init) !void {
             const station = buf[start..semi];
             const temp = parseTemp(buf[semi + 1 .. newline]);
 
-            const gop = map.getOrPutAssumeCapacity(station);
-            if (gop.found_existing) {
-                if (temp < gop.value_ptr.min) gop.value_ptr.min = temp;
-                if (temp > gop.value_ptr.max) gop.value_ptr.max = temp;
-                gop.value_ptr.sum += temp;
-                gop.value_ptr.count += 1;
-            } else {
-                gop.key_ptr.* = try gpa.dupe(u8, station);
-                gop.value_ptr.min = temp;
-                gop.value_ptr.max = temp;
-                gop.value_ptr.sum = temp;
-                gop.value_ptr.count = 1;
+            const entry = table.get(station);
+            entry.stats.sum += temp;
+            entry.stats.count += 1;
+            if (temp < entry.stats.min) entry.stats.min = temp;
+            if (temp > entry.stats.max) entry.stats.max = temp;
+            if (entry.isEmpty()) {
+                entry.key = try gpa.dupe(u8, station);
+                try stations.append(gpa, entry.key);
             }
         }
         off += i;
     }
 
-    var keys = try gpa.alloc([]const u8, map.count());
-    defer gpa.free(keys);
-
-    var it = map.keyIterator();
-    var i: u32 = 0;
-    while (it.next()) |k| : (i += 1) keys[i] = k.*;
-
-    std.mem.sort([]const u8, keys, {}, lessThan);
+    std.mem.sort([]const u8, stations.items, {}, lessThan);
 
     var stdout_buf: [4096]u8 = undefined;
     var stdout = Io.File.stdout().writer(io, &stdout_buf);
@@ -148,18 +175,18 @@ pub fn main(init: std.process.Init) !void {
 
     try writer.writeByte('{');
     var first: bool = true;
-    for (keys) |k| {
-        const v = map.get(k).?;
+    for (stations.items) |s| {
+        const v = table.get(s).stats;
 
         const avg = @as(f32, @floatFromInt(v.sum)) / @as(f32, @floatFromInt(v.count * 10));
         const min = backToFloat(v.min);
         const max = backToFloat(v.max);
 
         if (first) {
-            try writer.print("{s}={d:.1}/{d:.1}/{d:.1}", .{ k, min, avg, max });
+            try writer.print("{s}={d:.1}/{d:.1}/{d:.1}", .{ s, min, avg, max });
             first = false;
         } else {
-            try writer.print(", {s}={d:.1}/{d:.1}/{d:.1}", .{ k, min, avg, max });
+            try writer.print(", {s}={d:.1}/{d:.1}/{d:.1}", .{ s, min, avg, max });
         }
     }
     try writer.writeByte('}');
