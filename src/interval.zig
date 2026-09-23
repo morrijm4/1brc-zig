@@ -1,9 +1,8 @@
 const std = @import("std");
 const Io = std.Io;
 const Allocator = std.mem.Allocator;
-const root = @import("sub");
 const hash = @import("hash.zig");
-const interval = @import("interval.zig");
+const parse = @import("parse.zig");
 
 pub const Interval = struct {
     start: u64,
@@ -28,11 +27,10 @@ fn findScalarLastPos(comptime T: type, slice: []const T, index: usize, value: T)
 }
 
 pub fn process(
-    io: Io,
     gpa: Allocator,
     file: Io.File,
     table: hash.Table,
-    int: interval.Interval,
+    int: Interval,
 ) Io.Cancelable!void {
     var buf: [4 * 1024 * 1024]u8 = undefined;
     var off: usize = int.start;
@@ -40,21 +38,20 @@ pub fn process(
     while (pread(file, &buf, buf.len, off)) |n| {
         var i: usize = 0;
         while (i < n) {
-            if ((off + i) > int.end) {
-                return;
-            }
-
             const newline = std.mem.findScalarPos(u8, &buf, i, '\n') orelse break;
             const semi = findScalarLastPos(u8, &buf, newline - 3, ';') orelse break;
 
             const start = i;
             i = newline + 1;
 
+            if ((off + i) > int.end) {
+                return;
+            }
+
             const station = buf[start..semi];
             const temp = parse.temperature(buf[semi + 1 .. newline]);
 
             const entry = table.get(station);
-            try entry.mutex.lock(io);
             if (temp < entry.stats.min) entry.stats.min = temp;
             if (temp > entry.stats.max) entry.stats.max = temp;
             entry.stats.sum += temp;
@@ -62,33 +59,63 @@ pub fn process(
             if (entry.isEmpty()) {
                 entry.key = gpa.dupe(u8, station) catch @panic("OOM");
             }
-            entry.mutex.unlock(io);
         }
         off += i;
     }
 }
 
-pub fn create(io: Io, file: Io.File) ![root.jobs]Interval {
+pub fn create(comptime n: u8, gpa: Allocator, io: Io, file: Io.File) ![]Interval {
     var buf: [128]u8 = undefined;
     var file_reader = file.reader(io, &buf);
 
-    var intervals: [root.jobs]Interval = undefined;
+    var intervals: std.ArrayList(Interval) = try .initCapacity(gpa, n);
     const stat = try file.stat(io);
-    const block_size = @divFloor(stat.size, root.jobs);
+    const block_size = @max(@divFloor(stat.size, n), 128);
 
     var i: u64 = 0;
-    for (&intervals) |*int| {
+    for (0..n) |_| {
+        var int: Interval = undefined;
+
         try file_reader.seekBy(@as(i64, @intCast(block_size)));
         const chunk = file_reader.interface.takeDelimiterInclusive('\n') catch {
             int.start = i;
             int.end = stat.size;
-            continue;
+            intervals.appendAssumeCapacity(int);
+            break;
         };
 
         int.start = i;
         i += block_size + chunk.len;
         int.end = i;
+        intervals.appendAssumeCapacity(int);
     }
 
-    return intervals;
+    return intervals.items;
+}
+
+pub fn reduce(
+    comptime n: u8,
+    tables: [n]hash.Table,
+    stations: *std.ArrayList([]const u8),
+    aggregated: hash.Table,
+) void {
+    for (tables) |t| {
+        for (t.table) |entry| {
+            if (entry.isEmpty()) continue;
+
+            var agg = aggregated.getHash(entry.hash);
+            if (agg.isEmpty()) {
+                agg.* = entry;
+                stations.appendAssumeCapacity(entry.key);
+            } else {
+                agg.stats.count += entry.stats.count;
+                agg.stats.sum += entry.stats.sum;
+
+                if (entry.stats.min < agg.stats.min)
+                    agg.stats.min = entry.stats.min;
+                if (entry.stats.max > agg.stats.max)
+                    agg.stats.max = entry.stats.max;
+            }
+        }
+    }
 }

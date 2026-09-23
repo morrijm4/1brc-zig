@@ -1,4 +1,4 @@
-pub const jobs = 8;
+pub const jobs = 12;
 
 // Keep at 128 bytes to fit in cache line.
 pub const Stats = struct {

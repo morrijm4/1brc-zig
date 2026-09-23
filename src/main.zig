@@ -1,7 +1,8 @@
 const std = @import("std");
 const Io = std.Io;
 const Allocator = std.mem.Allocator;
-const Stats = @import("sub").Stats;
+const root = @import("sub");
+const Stats = root.Stats;
 const hash = @import("hash.zig");
 const parse = @import("parse.zig");
 const interval = @import("interval.zig");
@@ -16,7 +17,6 @@ pub fn main(init: std.process.Init) !void {
     const arena = init.arena.allocator();
 
     const args = try init.minimal.args.toSlice(arena);
-    defer arena.free(args);
 
     if (args.len < 2) {
         return error.NoFilePath;
@@ -25,18 +25,20 @@ pub fn main(init: std.process.Init) !void {
     // Read file into a buffer
     const sub_path = args[1];
     const file = try Io.Dir.cwd().openFile(io, sub_path, .{});
-    defer file.close(io);
 
     // Initialize station hash map
-    var entries: [10_000]hash.Table.Entry = undefined;
-    const table = hash.Table.init(&entries);
+    var entries: [root.jobs][10_000]hash.Table.Entry = undefined;
+    var tables: [root.jobs]hash.Table = undefined;
+    for (&tables, &entries) |*table, *buffer| {
+        table.* = hash.Table.init(buffer);
+    }
 
-    const intervals = try interval.create(io, file);
+    const intervals = try interval.create(root.jobs, gpa, io, file);
+    defer gpa.free(intervals);
 
     var group: Io.Group = .init;
-    for (intervals) |int| {
+    for (intervals, tables) |int, table| {
         group.async(io, interval.process, .{
-            io,
             gpa,
             file,
             table,
@@ -47,15 +49,10 @@ pub fn main(init: std.process.Init) !void {
 
     var stations: std.ArrayList([]const u8) = .empty;
     try stations.ensureTotalCapacityPrecise(gpa, 10_000);
-    defer {
-        for (stations.items) |s| gpa.free(s);
-        stations.deinit(gpa);
-    }
-    for (entries) |e| {
-        if (!e.isEmpty()) {
-            try stations.append(gpa, e.key);
-        }
-    }
+
+    var agg_entries: [10_000]hash.Table.Entry = undefined;
+    var aggregated = hash.Table.init(&agg_entries);
+    interval.reduce(root.jobs, tables, &stations, aggregated);
 
     std.mem.sort([]const u8, stations.items, {}, lessThan);
 
@@ -66,9 +63,11 @@ pub fn main(init: std.process.Init) !void {
     try writer.writeByte('{');
     var first: bool = true;
     for (stations.items) |s| {
-        const v = table.get(s).stats;
+        const v = aggregated.get(s).stats;
 
-        const avg = @as(f32, @floatFromInt(v.sum)) / @as(f32, @floatFromInt(v.count * 10));
+        const fsum: f32 = @floatFromInt(v.sum);
+        const fcount: f32 = @floatFromInt(v.count * 10);
+        const avg = fsum / fcount;
         const min = parse.toFloat(v.min);
         const max = parse.toFloat(v.max);
 
