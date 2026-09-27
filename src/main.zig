@@ -57,8 +57,7 @@ pub fn main(init: std.process.Init) !void {
     // Iterate through each line and insert into map
     // const start = Io.Clock.awake.now(io);
     // var last = start;
-    var i: u64 = 0;
-    while (try reader.takeDelimiter('\n')) |line| : (i += 1) {
+    while (try reader.takeDelimiter('\n')) |line| {
         // Max temperature string lengh is 5
         // Min temperature string lengh is 3
         // Vientiane;-26.8
@@ -82,25 +81,13 @@ pub fn main(init: std.process.Init) !void {
             gop.value_ptr.sum = temp;
             gop.value_ptr.count = 1;
         }
-
-        // if (i % 100_000_000 == 0) {
-        //     const now = Io.Clock.awake.now(io);
-        //     const elapsed = start.durationTo(now);
-        //     const interval = last.durationTo(now);
-        //     last = now;
-        //     std.debug.print("{d} lines in {d}s Since last {d}ms\n", .{
-        //         i,
-        //         elapsed.toSeconds(),
-        //         interval.toMilliseconds(),
-        //     });
-        // }
     }
 
     var keys = try gpa.alloc([]const u8, map.count());
     defer gpa.free(keys);
 
     var it = map.keyIterator();
-    i = 0;
+    var i: usize = 0;
     while (it.next()) |k| : (i += 1) keys[i] = k.*;
 
     std.mem.sort([]const u8, keys, {}, lessThan);
