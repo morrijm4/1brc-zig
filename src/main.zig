@@ -71,7 +71,7 @@ pub fn main(init: std.process.Init) !void {
     defer gpa.free(keys);
 
     var it = map.keyIterator();
-    var i = 0;
+    var i: usize = 0;
     while (it.next()) |k| : (i += 1) keys[i] = k.*;
 
     std.mem.sort([]const u8, keys, {}, lessThan);
