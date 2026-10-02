@@ -17,12 +17,11 @@ You can find each iteration as a branch of this repository prefixed with `N-`.
 
 | N | Optimization              | Execution Time (s) | Speedup |
 |---|---------------------------|--------------------|---------|
-| 0 | Baseline                  | 141.597            |         |
-| 1 | Zig implementation        | 27.998             | 5.057   |
-| 2 | Find semicolon in reverse | 19.172             | 1.460   |
-| 3 | Static allocation         | 16.044             | 1.195   |
-| 4 | Custom temperature parser | 13.231             | 1.213   |
-| 5 | Custom buffered reader    | 9.681              | 1.367   |
-| 6 | Custom hash map           | 9.277              | 1.044   |
-| 7 | Multi-threaded            | **1.140**          | 8.138   |
-
+| - | Baseline                  | 141.597            |         |
+| 0 | Zig implementation        | 27.998             | 5.057   |
+| 1 | Find semicolon in reverse | 19.172             | 1.460   |
+| 2 | Static allocation         | 16.044             | 1.195   |
+| 3 | Custom temperature parser | 13.231             | 1.213   |
+| 4 | Custom buffered reader    | 9.681              | 1.367   |
+| 5 | Custom hash map           | 9.277              | 1.044   |
+| 6 | Multi-threaded            | **1.140**          | 8.138   |
