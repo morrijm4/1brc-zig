@@ -6,13 +6,12 @@ Learn about 1BRC at [1brc.dev](https://1brc.dev/)
 
 Execution time: **1.14** seconds.
 
+> ```
 > CPU: Apple M4 Pro
->
 > RAM: 48 GB
->
 > MacOS: 26.6.2 (25G83)
->
 > Zig: 0.16.0
+> ```
 
 You can find each iteration as a branch of this repository prefixed with `N-`.
 
