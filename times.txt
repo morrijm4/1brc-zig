@@ -1,5 +1,0 @@
-IMPLMENTATION             TIME(s)
-naive                     27.520
-findScalarLastPos         19.947
-ensureTotalCapacity       16.519
-parseTemp                 13.500
